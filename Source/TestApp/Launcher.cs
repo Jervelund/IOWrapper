@@ -17,10 +17,15 @@ namespace TestApp
         static void Main(string[] args)
         {
             Debug.WriteLine("DBGVIEWCLEAR");
-            var inputList = IOW.Instance.GetInputList();
-            var outputList = IOW.Instance.GetOutputList();
 
-            ProviderStatus.LogProviderStatuses();
+            while (true) {
+                IOW.Instance.RefreshDevices();
+                var inputList = IOW.Instance.GetInputList();
+                var outputList = IOW.Instance.GetOutputList();
+                ProviderStatus.LogProviderStatuses();
+                Thread.Sleep(10000);
+            }
+            //IOW.Instance.Dispose();
 
             //var bindModeTester = new BindModeTester();
 

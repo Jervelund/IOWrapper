@@ -8,7 +8,7 @@ namespace Core_ESP8266.Model
     {
 
         public DeviceInfo DeviceInfo { get; set; }
-        public DataMessage DataMessage { get; set; }
+        public OutputMessage DataMessage { get; set; }
 
         private readonly UdpManager _udpManager;
         private readonly Timer _timer;

@@ -16,7 +16,10 @@ namespace Core_ESP8266.Managers
     {
         private const string ServiceType = "_ucr._udp";
 
-        public Dictionary<string, DeviceInfo> DeviceInfos { get; set; }
+        public Dictionary<string, DeviceInfo> InputDeviceInfos { get; set; }
+        public Dictionary<string, DeviceInfo> OutputDeviceInfos { get; set; }
+        public Dictionary<int, ServiceAgent> DiscoveredAgents { get; set; }
+        // DiscoveredAgents = new Dictionary<int, ServiceAgent>();
 
         private ServiceBrowser _serviceBrowser;
         private UdpManager _udpManager;
@@ -24,36 +27,49 @@ namespace Core_ESP8266.Managers
         public DiscoveryManager(UdpManager udpManager)
         {
             _udpManager = udpManager;
-            DeviceInfos = new Dictionary<string, DeviceInfo>();
+            DiscoveredAgents = new Dictionary<int, ServiceAgent>();
+            InputDeviceInfos = new Dictionary<string, DeviceInfo>();
+            OutputDeviceInfos = new Dictionary<string, DeviceInfo>();
 
             _serviceBrowser = new ServiceBrowser();
             _serviceBrowser.ServiceAdded += OnServiceAdded;
             _serviceBrowser.ServiceRemoved += OnServiceRemoved;
             _serviceBrowser.ServiceChanged += OnServiceChanged;
 
-            Debug.WriteLine($"Browsing for type: {ServiceType}");
+            Debug.WriteLine($"IOWrapper | ESP8266| Browsing for type: {ServiceType}");
             _serviceBrowser.StartBrowse(ServiceType);
         }
 
-        public DeviceInfo FindDeviceInfo(string name)
+        public DeviceInfo FindInputDeviceInfo(string name)
         {
-            if (!DeviceInfos.ContainsKey(name)) return null;
-            return DeviceInfos[name];
+            if (!InputDeviceInfos.ContainsKey(name)) return null;
+            return InputDeviceInfos[name];
+        }
+
+        public DeviceInfo FindOutputDeviceInfo(string name)
+        {
+            if (!OutputDeviceInfos.ContainsKey(name)) return null;
+            return OutputDeviceInfos[name];
         }
 
         private void OnServiceChanged(object sender, ServiceAnnouncementEventArgs e)
         {
             // Not handled
+            Debug.WriteLine($"IOWrapper| ESP8266| OnServiceChanged: {e}");
         }
 
         private void OnServiceRemoved(object sender, ServiceAnnouncementEventArgs e)
         {
-            var deviceInfo = FindDeviceInfo(e.Announcement.Hostname);
-            if (deviceInfo != null) DeviceInfos.Remove(deviceInfo.DeviceReport.DeviceName);
+            Debug.WriteLine($"IOWrapper| ESP8266| OnServiceRemoved: {e}");/*
+            var inputDeviceInfo = FindInputDeviceInfo(e.Announcement.Hostname);
+            if (inputDeviceInfo != null) InputDeviceInfos.Remove(inputDeviceInfo.DeviceReport.DeviceName);
+            var outputDeviceInfo = FindOutputDeviceInfo(e.Announcement.Hostname);
+            if (outputDeviceInfo != null) OutputDeviceInfos.Remove(outputDeviceInfo.DeviceReport.DeviceName);*/
         }
 
         private void OnServiceAdded(object sender, ServiceAnnouncementEventArgs e)
         {
+            Debug.WriteLine($"IOWrapper| ESP8266| OnServiceAdded: {e}");
             var serviceAgent = new ServiceAgent()
             {
                 Hostname = e.Announcement.Hostname,
@@ -61,32 +77,48 @@ namespace Core_ESP8266.Managers
                 Port = e.Announcement.Port
             };
 
-            if (BuildDeviceReport(serviceAgent, out var report, out var descriptorMessage))
+            _udpManager.RequestDescriptor(serviceAgent);
+            /*
+            if (BuildDeviceReport(serviceAgent, out var inputReport, out var outputReport, out var descriptorMessage))
             {
-                DeviceInfos.Add(e.Announcement.Hostname, new DeviceInfo()
+                InputDeviceInfos.Add(e.Announcement.Hostname, new DeviceInfo()
                 {
                     ServiceAgent = serviceAgent,
-                    DeviceReport = report,
+                    DeviceReport = inputReport,
+                    DescriptorMessage = descriptorMessage
+                });
+                OutputDeviceInfos.Add(e.Announcement.Hostname, new DeviceInfo()
+                {
+                    ServiceAgent = serviceAgent,
+                    DeviceReport = outputReport,
                     DescriptorMessage = descriptorMessage
                 });
             }
+            */
         }
 
-        private bool BuildDeviceReport(ServiceAgent serviceAgent, out DeviceReport deviceReport, out DescriptorMessage requestDescriptor)
+        private bool BuildDeviceReport(ServiceAgent serviceAgent, out DeviceReport inputDeviceReport, out DeviceReport outputDeviceReport, out DescriptorMessage requestDescriptor)
         {
             requestDescriptor = _udpManager.RequestDescriptor(serviceAgent);
 
-            if (requestDescriptor == null || !MessageBase.MessageType.Descriptor.Equals(requestDescriptor.Type))
+            if (requestDescriptor == null || !MessageBase.MessageType.DescriptorResponse.Equals(requestDescriptor.Type))
             {
-                deviceReport = null;
+                inputDeviceReport = null;
+                outputDeviceReport = null;
                 return false;
             }
 
-            var deviceReportNodes = new List<DeviceReportNode>();
-            if (requestDescriptor.Buttons.Count > 0) deviceReportNodes.Add(BuildOutputNodes("Buttons", BindingCategory.Momentary, requestDescriptor.Buttons));
-            if (requestDescriptor.Axes.Count > 0) deviceReportNodes.Add(BuildOutputNodes("Axes", BindingCategory.Signed, requestDescriptor.Axes));
-            if (requestDescriptor.Deltas.Count > 0) deviceReportNodes.Add(BuildOutputNodes("Deltas", BindingCategory.Delta, requestDescriptor.Deltas));
-            if (requestDescriptor.Events.Count > 0) deviceReportNodes.Add(BuildOutputNodes("Events", BindingCategory.Event, requestDescriptor.Events));
+            var inputDeviceReportNodes = new List<DeviceReportNode>();
+            if (requestDescriptor.Input.Buttons.Count > 0) inputDeviceReportNodes.Add(BuildDeviceReportNodes("Buttons", BindingCategory.Momentary, requestDescriptor.Input.Buttons));
+            if (requestDescriptor.Input.Axes.Count > 0) inputDeviceReportNodes.Add(BuildDeviceReportNodes("Axes", BindingCategory.Signed, requestDescriptor.Input.Axes));
+            if (requestDescriptor.Input.Deltas.Count > 0) inputDeviceReportNodes.Add(BuildDeviceReportNodes("Deltas", BindingCategory.Delta, requestDescriptor.Input.Deltas));
+            if (requestDescriptor.Input.Events.Count > 0) inputDeviceReportNodes.Add(BuildDeviceReportNodes("Events", BindingCategory.Event, requestDescriptor.Input.Events));
+
+            var outputDeviceReportNodes = new List<DeviceReportNode>();
+            if (requestDescriptor.Output.Buttons.Count > 0) outputDeviceReportNodes.Add(BuildDeviceReportNodes("Buttons", BindingCategory.Momentary, requestDescriptor.Output.Buttons));
+            if (requestDescriptor.Output.Axes.Count > 0) outputDeviceReportNodes.Add(BuildDeviceReportNodes("Axes", BindingCategory.Signed, requestDescriptor.Output.Axes));
+            if (requestDescriptor.Output.Deltas.Count > 0) outputDeviceReportNodes.Add(BuildDeviceReportNodes("Deltas", BindingCategory.Delta, requestDescriptor.Output.Deltas));
+            if (requestDescriptor.Output.Events.Count > 0) outputDeviceReportNodes.Add(BuildDeviceReportNodes("Events", BindingCategory.Event, requestDescriptor.Output.Events));
 
             var descriptor = new DeviceDescriptor()
             {
@@ -94,17 +126,24 @@ namespace Core_ESP8266.Managers
                 DeviceInstance = 0 // Unused
             };
 
-            deviceReport = new DeviceReport()
+            inputDeviceReport = new DeviceReport()
             {
                 DeviceName = serviceAgent.Hostname,
                 DeviceDescriptor = descriptor,
-                Nodes = deviceReportNodes
+                Nodes = inputDeviceReportNodes
+            };
+
+            outputDeviceReport = new DeviceReport()
+            {
+                DeviceName = serviceAgent.Hostname,
+                DeviceDescriptor = descriptor,
+                Nodes = outputDeviceReportNodes
             };
 
             return true;
         }
 
-        private DeviceReportNode BuildOutputNodes(string name, BindingCategory bindingCategory, List<IODescriptor> descriptors)
+        private DeviceReportNode BuildDeviceReportNodes(string name, BindingCategory bindingCategory, List<IODescriptor> descriptors)
         {
             var bindings = new List<BindingReport>();
             foreach (var ioDescriptor in descriptors)

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 using Core_ESP8266.Model;
 using Core_ESP8266.Model.Message;
 using MessagePack;
@@ -11,54 +12,101 @@ namespace Core_ESP8266.Managers
 {
     public class UdpManager : IDisposable
     {
-        private readonly UdpClient _udpClient;
+        public struct UdpState
+        {
+            public UdpClient udpClient;
+            public IPEndPoint ipEndpoint;
+        }
+
+        private static UdpClient _udpClient;
+        private static IPEndPoint _ipEndpoint;
 
         public UdpManager()
         {
-            _udpClient = new UdpClient(8090)
-            {
-                Client = { ReceiveTimeout = 1000 }
-            };
+            Debug.WriteLine("IOWrapper| ESP8266| UdpManager()");
+
+            // Receive from any endpoints
+            _ipEndpoint = new IPEndPoint(IPAddress.Any, 0);
+            // Receive from any listen on port 8090 (any reason for this port?)
+            _udpClient = new UdpClient(8090);
+            _udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
         }
 
-        public void SendDataMessage(ServiceAgent serviceAgent, DataMessage dataMessage)
+        public void SendDataMessage(ServiceAgent serviceAgent, OutputMessage dataMessage)
         {
             // TODO Should each device have its own UDPClient?
             SendUdpPacket(serviceAgent, dataMessage);
         }
+        /*
+        public static DescriptorMessage getLastDescriptor() {
+            return _lastDescriptorMessage;
+        }
+        public static DescriptorMessage getLastInputMessage()
+        {
+            return _lastDescriptorMessage;
+        }
+        */
+        public static void ReceiveCallback(IAsyncResult ar)
+        {   
+            // Move received packet to receive buffer
+            byte[] receiveBytes = _udpClient.EndReceive(ar, ref _ipEndpoint);
+            // Start async receive again
+            _udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+            string receiveString = Encoding.ASCII.GetString(receiveBytes);
+            
+            Debug.WriteLine($"IOWrapper| ESP8266| Received: {receiveString}");
+
+            MessageBase msg = MessagePackSerializer.Deserialize<MessageBase>(receiveBytes);
+            Debug.WriteLine($"IOWrapper| ESP8266| Msg Type: {msg.Type}");
+            switch (msg.Type) {
+                case MessageBase.MessageType.DescriptorResponse:
+                    DescriptorMessage _lastDescriptorMessage = MessagePackSerializer.Deserialize<DescriptorMessage>(receiveBytes);
+                    //Debug.WriteLine($"IOWrapper| ESP8266| Received: {descriptorMessage.Input.Buttons.Count}");
+                    break;
+                case MessageBase.MessageType.Input:
+                    InputMessage _lastInputMessage = MessagePackSerializer.Deserialize<InputMessage>(receiveBytes);
+                    Debug.WriteLine($"IOWrapper| ESP8266| Received: {_lastInputMessage.Buttons.Count}");
+                    break;
+            }
+           
+        }
 
         public DescriptorMessage RequestDescriptor(ServiceAgent serviceAgent)
         {
-            var descriptorMessage = new DescriptorMessage();
-            SendUdpPacket(serviceAgent, descriptorMessage);
-            if (!ReceiveUdpPacket(serviceAgent, out var response)) return null;
+            Debug.WriteLine("IOWrapper| ESP8266| RequestDescriptor()");
+            var requestDescriptorMessage = new MessageBase();
+            requestDescriptorMessage.Type = MessageBase.MessageType.DescriptorRequest;
+            SendUdpPacket(serviceAgent, requestDescriptorMessage);
 
-            return MessagePackSerializer.Deserialize<DescriptorMessage>(response);
+            return null;
+            // Don't use blocking receive
+            if (!ReceiveUdpPacket(serviceAgent, out var receiveBuffer)) return null;
+            return MessagePackSerializer.Deserialize<DescriptorMessage>(receiveBuffer);
         }
 
         private void SendUdpPacket(ServiceAgent serviceAgent, object messageBase)
         {
-            _udpClient.Connect(serviceAgent.Ip, serviceAgent.Port);
-
+            Debug.WriteLine("IOWrapper| ESP8266| SendUDPPacket()");
             var message = MessagePackSerializer.Serialize(messageBase);
-            _udpClient.Send(message, message.Length);
-            Debug.WriteLine($"Sent UDP to {serviceAgent.FullName}");
-            Debug.WriteLine(MessagePackSerializer.ConvertToJson(message));
+            IPEndPoint ipEndpoint = new IPEndPoint(serviceAgent.Ip, serviceAgent.Port);
+            _udpClient.Send(message, message.Length, ipEndpoint);
+            Debug.WriteLine($"IOWrapper| ESP8266| Sent UDP to {serviceAgent.FullName}: {MessagePackSerializer.ConvertToJson(message)}");
         }
 
-        private bool ReceiveUdpPacket(ServiceAgent serviceAgent, out byte[] response)
+        private bool ReceiveUdpPacket(ServiceAgent serviceAgent, out byte[] receiveBuffer)
         {
+            Debug.WriteLine("IOWrapper| ESP8266| ReceiveUDPPacket()");
             var ipEndPoint = new IPEndPoint(serviceAgent.Ip, serviceAgent.Port);
             try
             {
-                response = _udpClient.Receive(ref ipEndPoint);
-                var responseString = Encoding.Default.GetString(response);
-                Debug.WriteLine($"Received UDP: {responseString}");
+                receiveBuffer = _udpClient.Receive(ref ipEndPoint);
+                var responseString = Encoding.Default.GetString(receiveBuffer);
+                Debug.WriteLine($"IOWrapper| ESP8266| Received UDP: {responseString}");
                 return true;
             }
             catch (SocketException e)
             {
-                response = null;
+                receiveBuffer = null;
                 return false;
             }
         }

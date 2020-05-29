@@ -5,9 +5,9 @@ namespace Core_ESP8266.Model.Message
     [MessagePackObject]
     public class IODescriptor
     {
-        [Key("Name")]
+        [Key("k")]
         public string Name { get; set; }
-        [Key("Value")]
+        [Key("v")]
         public int Value { get; set; }
     }
 }

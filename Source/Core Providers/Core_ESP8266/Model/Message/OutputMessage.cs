@@ -4,19 +4,19 @@ using MessagePack;
 namespace Core_ESP8266.Model.Message
 {
     [MessagePackObject]
-    public class DataMessage : MessageBase
+    public class OutputMessage : MessageBase
     {
 
-        [Key("Buttons")]
+        [Key("b")]
         public List<IOData> Buttons { get; set; }
 
-        [Key("Axes")]
+        [Key("a")]
         public List<IOData> Axes { get; set; }
 
-        [Key("Deltas")]
+        [Key("d")]
         public List<IOData> Deltas { get; set; }
 
-        [Key("Events")]
+        [Key("e")]
         public List<IOData> Events { get; set; }
 
         private readonly Dictionary<int, IOData> _buttonLookup;
@@ -24,9 +24,9 @@ namespace Core_ESP8266.Model.Message
         private readonly Dictionary<int, IOData> _deltasLookup;
         private readonly Dictionary<int, IOData> _eventsLookup;
 
-        public DataMessage()
+        public OutputMessage()
         {
-            Type = MessageType.Data;
+            Type = MessageType.Output;
             Buttons = new List<IOData>();
             Axes = new List<IOData>();
             Deltas= new List<IOData>();

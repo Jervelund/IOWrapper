@@ -11,7 +11,7 @@ namespace Core_Tobii_Interaction
     {
         public static void Log(string formatStr, params object[] arguments)
         {
-            Debug.WriteLine("IOWrapper| Tobii | " + formatStr, arguments);
+            //Debug.WriteLine("IOWrapper| Tobii | " + formatStr, arguments);
         }
     }
 }

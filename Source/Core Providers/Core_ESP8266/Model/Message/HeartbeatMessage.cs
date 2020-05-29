@@ -4,7 +4,7 @@
     {
         public HeartbeatMessage()
         {
-            Type = MessageType.Heartbeat;
+            Type = MessageType.HeartbeatRequest;
         }
     }
 }

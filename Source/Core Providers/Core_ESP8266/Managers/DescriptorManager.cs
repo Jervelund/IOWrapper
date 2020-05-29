@@ -21,7 +21,6 @@ namespace Core_ESP8266.Managers
             _subscribedDevices = new Dictionary<string, SubscribedDevice>();
         }
 
-
         public void WriteOutput(OutputSubscriptionRequest subReq, BindingDescriptor bindingDescriptor, int state)
         {
             var subscribedDevice = _subscribedDevices[subReq.DeviceDescriptor.DeviceHandle];
@@ -52,7 +51,7 @@ namespace Core_ESP8266.Managers
                 DataMessage = BuildDescriptor(deviceInfo)
             };
 
-            _subscribedDevices.Add(deviceInfo.DeviceReport.DeviceDescriptor.DeviceHandle, subscribedDevice);
+            //_subscribedDevices.Add(deviceInfo.DeviceReport.DeviceDescriptor.DeviceHandle, subscribedDevice);
             subscribedDevice.StartSubscription();
 
             return true;
@@ -60,20 +59,21 @@ namespace Core_ESP8266.Managers
 
         public bool StopOutputDevice(DeviceInfo deviceInfo)
         {
+            return true;/*
             var deviceHandle = deviceInfo.DeviceReport.DeviceDescriptor.DeviceHandle;
             _subscribedDevices[deviceHandle].StopSubscription();
 
-            return _subscribedDevices.Remove(deviceHandle);
+            return _subscribedDevices.Remove(deviceHandle);*/
         }
 
-        private DataMessage BuildDescriptor(DeviceInfo deviceInfo)
+        private OutputMessage BuildDescriptor(DeviceInfo deviceInfo)
         {
-            var dataMessage = new DataMessage();
+            var dataMessage = new OutputMessage();
 
-            deviceInfo.DescriptorMessage.Buttons.ForEach(io => dataMessage.AddButton(io.Value));
-            deviceInfo.DescriptorMessage.Axes.ForEach(io => dataMessage.AddAxis(io.Value));
-            deviceInfo.DescriptorMessage.Deltas.ForEach(io => dataMessage.AddDelta(io.Value));
-            deviceInfo.DescriptorMessage.Events.ForEach(io => dataMessage.AddEvent(io.Value));
+            deviceInfo.DescriptorMessage.Output.Buttons.ForEach(io => dataMessage.AddButton(io.Value));
+            deviceInfo.DescriptorMessage.Output.Axes.ForEach(io => dataMessage.AddAxis(io.Value));
+            deviceInfo.DescriptorMessage.Output.Deltas.ForEach(io => dataMessage.AddDelta(io.Value));
+            deviceInfo.DescriptorMessage.Output.Events.ForEach(io => dataMessage.AddEvent(io.Value));
 
             return dataMessage;
         }

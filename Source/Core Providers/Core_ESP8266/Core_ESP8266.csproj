@@ -75,8 +75,13 @@
     <Compile Include="Managers\DescriptorManager.cs" />
     <Compile Include="Managers\DiscoveryManager.cs" />
     <Compile Include="Managers\UdpManager.cs" />
+    <Compile Include="Managers\NetworkManager.cs" />
     <Compile Include="Model\DeviceInfo.cs" />
-    <Compile Include="Model\Message\DataMessage.cs" />
+    <Compile Include="Model\Message\InputMessage.cs" />
+    <Compile Include="Model\Message\ReportDescriptor.cs" />
+    <Compile Include="Model\Message\UnsubscribeMessage.cs" />
+    <Compile Include="Model\Message\SubscribeMessage.cs" />
+    <Compile Include="Model\Message\OutputMessage.cs" />
     <Compile Include="Model\Message\DescriptorMessage.cs" />
     <Compile Include="Model\Message\HeartbeatMessage.cs" />
     <Compile Include="Model\Message\IOData.cs" />
