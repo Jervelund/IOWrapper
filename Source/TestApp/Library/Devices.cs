@@ -82,5 +82,12 @@ namespace TestApp.Library
         {
             public static DeviceDescriptor Pro = new DeviceDescriptor { DeviceHandle = "VID_046D&PID_C62B" };
         }
+
+        public static class ESP8266
+        {
+            public static DeviceDescriptor Traxxas = new DeviceDescriptor { DeviceHandle = "UCR-Traxxas", DeviceInstance = 0 };
+        }
+
+
     }
 }

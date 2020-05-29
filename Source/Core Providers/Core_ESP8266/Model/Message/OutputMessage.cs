@@ -8,34 +8,43 @@ namespace Core_ESP8266.Model.Message
     {
 
         [Key("b")]
-        public List<IOData> Buttons { get; set; }
+        public List<short> Buttons { get; set; }
 
         [Key("a")]
-        public List<IOData> Axes { get; set; }
+        public List<short> Axes { get; set; }
 
         [Key("d")]
-        public List<IOData> Deltas { get; set; }
+        public List<short> Deltas { get; set; }
 
         [Key("e")]
-        public List<IOData> Events { get; set; }
+        public List<short> Events { get; set; }
 
-        private readonly Dictionary<int, IOData> _buttonLookup;
-        private readonly Dictionary<int, IOData> _axesLookup;
-        private readonly Dictionary<int, IOData> _deltasLookup;
-        private readonly Dictionary<int, IOData> _eventsLookup;
+        Dictionary<int, int> _buttonLookup;
+        Dictionary<int, int> _axesLookup;
+        Dictionary<int, int> _deltasLookup;
+        Dictionary<int, int> _eventsLookup;
 
         public OutputMessage()
         {
             Type = MessageType.Output;
-            Buttons = new List<IOData>();
-            Axes = new List<IOData>();
-            Deltas= new List<IOData>();
-            Events = new List<IOData>();
 
-            _buttonLookup = new Dictionary<int, IOData>();
-            _axesLookup = new Dictionary<int, IOData>();
-            _deltasLookup = new Dictionary<int, IOData>();
-            _eventsLookup = new Dictionary<int, IOData>();
+            Buttons = new List<short>();
+            Axes = new List<short>();
+            Deltas = new List<short>();
+            Events = new List<short>();
+
+            _buttonLookup = new Dictionary<int, int>();
+            _axesLookup = new Dictionary<int, int>();
+            _deltasLookup = new Dictionary<int, int>();
+            _eventsLookup = new Dictionary<int, int>();
+        }
+
+        public void configureMessage(DescriptorMessage descriptor)
+        {
+            descriptor.Output.Buttons.ForEach(io => AddButton(io.Value));
+            descriptor.Output.Axes.ForEach(io => AddAxis(io.Value));
+            descriptor.Output.Deltas.ForEach(io => AddDelta(io.Value));
+            descriptor.Output.Events.ForEach(io => AddEvent(io.Value));
         }
 
         public void AddButton(int index)
@@ -57,31 +66,31 @@ namespace Core_ESP8266.Model.Message
         {
             AddIOData(Events, _eventsLookup, new IOData(index, 0));
         }
-
-        private void AddIOData(List<IOData> list, Dictionary<int, IOData> dict, IOData data)
+   
+        private void AddIOData(List<short> list, Dictionary<int, int> dict, IOData data)
         {
-            list.Add(data);
-            dict.Add(data.Index, data);
+            dict.Add(data.Index, list.Count);
+            list.Add(data.Value);
         }
 
         public void SetButton(int index, short value)
         {
-            _buttonLookup[index].Value = value;
+            Buttons[_buttonLookup[index]] = value;
         }
 
         public void SetAxis(int index, short value)
         {
-            _axesLookup[index].Value = value;
+            Axes[_axesLookup[index]] = value;
         }
 
         public void SetDelta(int index, short value)
         {
-            _deltasLookup[index].Value += value;
+            Deltas[_deltasLookup[index]] += value;
         }
 
         public void SetEvent(int index, short value)
         {
-            _eventsLookup[index].Value = value;
+            Events[_eventsLookup[index]] = value;
         }
     }
 }

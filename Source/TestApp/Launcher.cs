@@ -14,6 +14,9 @@ namespace TestApp
 {
     class Launcher
     {
+        static void print(short i) {
+            Console.WriteLine($"Got some input! {i}");
+        }
         static void Main(string[] args)
         {
             Debug.WriteLine("DBGVIEWCLEAR");
@@ -22,9 +25,37 @@ namespace TestApp
                 IOW.Instance.RefreshDevices();
                 var inputList = IOW.Instance.GetInputList();
                 var outputList = IOW.Instance.GetOutputList();
+                if (inputList.Count > 0)
+                    break;
                 ProviderStatus.LogProviderStatuses();
                 Thread.Sleep(10000);
             }
+
+            var subReqOutput = new OutputSubscriptionRequest
+            {
+                ProviderDescriptor = Library.Providers.ESP8266,
+                DeviceDescriptor = Library.Devices.ESP8266.Traxxas,
+                SubscriptionDescriptor = new SubscriptionDescriptor(),
+            };
+            Console.WriteLine("Press Enter to subscribe output");
+            Console.ReadLine();
+            IOW.Instance.SubscribeOutput(subReqOutput);
+            Console.WriteLine("Press Enter to set state");
+            Console.ReadLine();
+            IOW.Instance.SetOutputstate(subReqOutput, Library.Bindings.Generic.Button1, 10);
+            Console.WriteLine("Press Enter to unsubscribe output");
+            Console.ReadLine();
+            IOW.Instance.UnsubscribeOutput(subReqOutput);
+            Console.WriteLine("Press Enter to subscribe input");
+            Console.ReadLine();
+            var subReqInput = new InputSubscriptionRequest
+            {
+                Callback = print,
+                ProviderDescriptor = Library.Providers.ESP8266,
+                DeviceDescriptor = Library.Devices.ESP8266.Traxxas,
+                SubscriptionDescriptor = new SubscriptionDescriptor(),
+            };
+            IOW.Instance.SubscribeInput(subReqInput);
             //IOW.Instance.Dispose();
 
             //var bindModeTester = new BindModeTester();

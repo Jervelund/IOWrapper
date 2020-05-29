@@ -42,9 +42,10 @@ namespace Core_ESP8266.Managers
                     break;
             }
         }
-
+        /*
         public bool StartOutputDevice(DeviceInfo deviceInfo)
         {
+            return true;
             var subscribedDevice = new SubscribedDevice(_udpManager)
             {
                 DeviceInfo = deviceInfo,
@@ -56,7 +57,7 @@ namespace Core_ESP8266.Managers
 
             return true;
         }
-
+    */
         public bool StopOutputDevice(DeviceInfo deviceInfo)
         {
             return true;/*
@@ -65,7 +66,7 @@ namespace Core_ESP8266.Managers
 
             return _subscribedDevices.Remove(deviceHandle);*/
         }
-
+        /*
         private OutputMessage BuildDescriptor(DeviceInfo deviceInfo)
         {
             var dataMessage = new OutputMessage();
@@ -76,6 +77,6 @@ namespace Core_ESP8266.Managers
             deviceInfo.DescriptorMessage.Output.Events.ForEach(io => dataMessage.AddEvent(io.Value));
 
             return dataMessage;
-        }
+        }*/
     }
 }

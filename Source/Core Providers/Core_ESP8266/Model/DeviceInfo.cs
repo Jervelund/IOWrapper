@@ -11,7 +11,6 @@ namespace Core_ESP8266.Model
     public class DeviceInfo
     {
         public ServiceAgent ServiceAgent { get; set; }
-        public DescriptorMessage DescriptorMessage { get; set; }
         public DeviceReport DeviceReportInput { get; set; }
         public DeviceReport DeviceReportOutput { get; set; }
         public InputMessage InputMessage { get; set; }

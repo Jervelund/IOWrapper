@@ -6,7 +6,6 @@ namespace Core_ESP8266.Model.Message
     [MessagePackObject]
     public class InputMessage : MessageBase
     {
-
         [Key("b")]
         public List<int> Buttons { get; set; }
 

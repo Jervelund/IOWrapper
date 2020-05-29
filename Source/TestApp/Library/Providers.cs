@@ -23,5 +23,6 @@ namespace TestApp.Library
         public static ProviderDescriptor DS4Windows = new ProviderDescriptor { ProviderName = "Core_DS4WindowsApi" };
         public static ProviderDescriptor SpaceMouse = new ProviderDescriptor { ProviderName = "Core_SpaceMouse" };
         public static ProviderDescriptor Midi = new ProviderDescriptor { ProviderName = "Core_Midi" };
+        public static ProviderDescriptor ESP8266 = new ProviderDescriptor { ProviderName = "Core_ESP8266" };
     }
 }
