@@ -14,11 +14,14 @@ namespace Core_ESP8266.Model.Message
             Output = 4,
             Subscribe = 5,
             Unsubscribe = 6,
-            Input = 7
+            Input = 7,
+            BindStart = 8,
+            BindStop = 9,
+            BindResponse = 10
         }
 
         [Key("MsgType")]
-        public MessageType Type { get; set; }
+        public MessageType MsgType { get; set; }
 
         [Key("hostname")]
         public string Hostname { get; set; }

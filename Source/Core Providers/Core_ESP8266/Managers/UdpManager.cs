@@ -57,8 +57,8 @@ namespace Core_ESP8266.Managers
             Debug.WriteLine($"IOWrapper| ESP8266| Received: {receiveString}");
 
             MessageBase msg = MessagePackSerializer.Deserialize<MessageBase>(receiveBytes);
-            Debug.WriteLine($"IOWrapper| ESP8266| Msg Type: {msg.Type}");
-            switch (msg.Type) {
+            Debug.WriteLine($"IOWrapper| ESP8266| Msg Type: {msg.MsgType}");
+            switch (msg.MsgType) {
                 case MessageBase.MessageType.DescriptorResponse:
                     DescriptorMessage _lastDescriptorMessage = MessagePackSerializer.Deserialize<DescriptorMessage>(receiveBytes);
                     //Debug.WriteLine($"IOWrapper| ESP8266| Received: {descriptorMessage.Input.Buttons.Count}");
@@ -75,7 +75,7 @@ namespace Core_ESP8266.Managers
         {
             Debug.WriteLine("IOWrapper| ESP8266| RequestDescriptor()");
             var requestDescriptorMessage = new MessageBase();
-            requestDescriptorMessage.Type = MessageBase.MessageType.DescriptorRequest;
+            requestDescriptorMessage.MsgType = MessageBase.MessageType.DescriptorRequest;
             SendUdpPacket(serviceAgent, requestDescriptorMessage);
 
             return null;

@@ -26,7 +26,7 @@ namespace Core_ESP8266.Model.Message
 
         public OutputMessage()
         {
-            Type = MessageType.Output;
+            MsgType = MessageType.Output;
 
             Buttons = new List<short>();
             Axes = new List<short>();

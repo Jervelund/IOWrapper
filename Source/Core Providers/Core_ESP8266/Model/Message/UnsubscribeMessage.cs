@@ -8,7 +8,7 @@ namespace Core_ESP8266.Model.Message
     {
         public UnsubscribeMessage()
         {
-            Type = MessageType.Unsubscribe;
+            MsgType = MessageType.Unsubscribe;
         }
     }
 }

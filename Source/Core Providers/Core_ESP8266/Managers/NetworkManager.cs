@@ -1,18 +1,22 @@
 ﻿using Core_ESP8266.Model;
 using Core_ESP8266.Model.Message;
+using Hidwizards.IOWrapper.Libraries.SubscriptionHandlers;
 using HidWizards.IOWrapper.DataTransferObjects;
 using MessagePack;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using Tmds.MDns;
+
 
 namespace Core_ESP8266
 {
@@ -26,11 +30,17 @@ namespace Core_ESP8266
         private readonly ServiceBrowser serviceBrowser;
         private static Dictionary<string, Timer> outputTimers { get; set; }
         private static Dictionary<string, Timer> inputTimers { get; set; }
+        private static Action<ProviderDescriptor, DeviceDescriptor, BindingReport, short> BindModeCallback { get; set; }
+        private static ProviderDescriptor _providerDescriptor;
+        private static ConcurrentQueue<QueuedUDPPacket> SendQueue;
 
-        public NetworkManager()
+        public NetworkManager(ProviderDescriptor providerDescriptor)
         {
             DiscoveredAgents = new Dictionary<string, DeviceInfo>();
             outputTimers = new Dictionary<string, Timer>();
+            inputTimers = new Dictionary<string, Timer>();
+            _providerDescriptor = providerDescriptor;
+            SendQueue = new ConcurrentQueue<QueuedUDPPacket>();
 
             // Start UDP client
             udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
@@ -68,36 +78,86 @@ namespace Core_ESP8266
                     Port = e.Announcement.Port
                 }
             };
+            var deviceDescriptor = new DeviceDescriptor()
+            {
+                DeviceHandle = e.Announcement.Hostname,
+                DeviceInstance = 0
+            };
+            deviceInfo.InputSubscriptionHandler = new SubscriptionHandler(deviceDescriptor, deviceEmptyHandler, CallbackHandler);
 
             DiscoveredAgents.Add(e.Announcement.Hostname, deviceInfo);
-            SendBaseMessage(deviceInfo.ServiceAgent, MessageBase.MessageType.DescriptorRequest);
+            SendBaseMessage(deviceInfo.ServiceAgent, MessageBase.MessageType.DescriptorRequest, 1);
+        }
+
+        private void CallbackHandler(InputSubscriptionRequest subReq, short value)
+        {
+            Debug.WriteLine($"IOWrapper| ESP8266| callbackHandler: {subReq}");
+            Task.Factory.StartNew(() => subReq.Callback(value));
+        }
+
+        private void deviceEmptyHandler(object sender, DeviceDescriptor e)
+        {
+            Debug.WriteLine($"IOWrapper| ESP8266| deviceEmptyHandler: {e.DeviceHandle}");
+            var device = LookupDeviceInfo(e.DeviceHandle);
+            if (device == null) return;
+
+            // No more subscriptions - notify device that it should stop updating us
+            SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.Unsubscribe, 1);
+
+            // Check if we have any timers to clear
+            if (inputTimers.ContainsKey(e.DeviceHandle))
+            {
+                // Clear timer and remove from list
+                inputTimers[e.DeviceHandle].Stop();
+                inputTimers.Remove(e.DeviceHandle);
+            }
         }
 
         internal bool SubscribeOutput(OutputSubscriptionRequest subReq)
         {
             // We can only send data to devices we know, so don't allow users to subscribe if the device is not able to respond with descriptors
-            if (LookupDeviceInfo(subReq.DeviceDescriptor.DeviceHandle).OutputMessage == null)
+            var deviceHandle = subReq.DeviceDescriptor.DeviceHandle;
+            var device = LookupDeviceInfo(deviceHandle);
+            if (device == null || device.OutputMessage == null)
                 return false;
-            var timer = new Timer() {
-                AutoReset = true,
-                Enabled = true,
-                Interval = 1000
-            };
-            timer.Elapsed += (sender, e) => onOutputTimer(sender, e, subReq.DeviceDescriptor.DeviceHandle);
-            timer.Start();
-            outputTimers.Add(subReq.DeviceDescriptor.DeviceHandle, timer);
+
+            // Add subReq to list of active output subsctiptions
+            if (!device.ActiveOutputSubscriptions.ContainsKey(subReq.SubscriptionDescriptor.SubscriberGuid))
+                device.ActiveOutputSubscriptions.Add(subReq.SubscriptionDescriptor.SubscriberGuid, subReq);
+
+            if (!outputTimers.ContainsKey(deviceHandle)){ 
+                var timer = new Timer() {
+                    AutoReset = true,
+                    Enabled = true,
+                    Interval = 1000
+                };
+                timer.Elapsed += (sender, e) => onOutputTimer(sender, e, deviceHandle);
+                timer.Start();
+                outputTimers.Add(deviceHandle, timer);
+                Debug.WriteLine($"IOWrapper| ESP8266| Added output timer ({device.ServiceAgent.FullName})");
+            }
             return true;
         }
 
         internal bool UnsubscribeOutput(OutputSubscriptionRequest subReq)
         {
+            Debug.WriteLine("IOWrapper| ESP8266| UnsubscribeOutput()");
+            // We can only send data to devices we know, so don't allow users to subscribe if the device is not able to respond with descriptors
             var deviceHandle = subReq.DeviceDescriptor.DeviceHandle;
-            // Check if we have any timers to clear
-            if (outputTimers.ContainsKey(deviceHandle))
-            {
-                // Clear timer and remove from list
-                outputTimers[deviceHandle].Stop();
-                outputTimers.Remove(deviceHandle);
+            var device = LookupDeviceInfo(deviceHandle);
+            if (device == null || device.OutputMessage == null)
+                return false;
+            // Remove subReq from the active output subscription list
+            device.ActiveOutputSubscriptions.Remove(subReq.SubscriptionDescriptor.SubscriberGuid);
+            Debug.WriteLine($"IOWrapper| ESP8266| -> Active output subscription count: {device.ActiveOutputSubscriptions.Count}");
+            // If the active subscription list is now empty, remove the output timer
+            if (device.ActiveOutputSubscriptions.Count == 0) { 
+                if (outputTimers.ContainsKey(deviceHandle))
+                {
+                    outputTimers[deviceHandle].Stop();
+                    outputTimers.Remove(deviceHandle);
+                    Debug.WriteLine($"IOWrapper| ESP8266| Removed output timer ({device.ServiceAgent.FullName})");
+                }
             }
             return true;
         }
@@ -124,7 +184,7 @@ namespace Core_ESP8266
                     throw new NotImplementedException();
                     break;
             }
-            // If we haven't updated the device within the FLOOD RATE, transmit now
+            // Attempt to transmit the output message right away
             transmitOutput(device);
         }
 
@@ -136,17 +196,34 @@ namespace Core_ESP8266
         }
 
         private void transmitOutput(DeviceInfo device) {
-            // Don't allow retransmission if we sent a packet in the last 10 miliseconds, as this will screw the ESP's receive buffer
-            if (device.ServiceAgent.LastSent > DateTime.Now.AddMilliseconds(-10))
-            {
-                Debug.WriteLine($"IOWrapper| ESP8266| Transmit skipped due to antiflooding ({device.ServiceAgent.FullName})");
-                return;
-            }
-            SendUdpPacket(device.ServiceAgent, device.OutputMessage);
+            SendUdpPacket(device.ServiceAgent, device.OutputMessage, 0);
 
             // Clear all deltas and events, once they have been transmitted
-            device.OutputMessage.Deltas.ForEach(io => io = 0);
-            device.OutputMessage.Events.ForEach(io => io = 0);
+            for (int i = 0; i < device.OutputMessage.Deltas.Count; i++)
+                device.OutputMessage.Deltas[i] = 0;
+            for (int i = 0; i < device.OutputMessage.Events.Count; i++)
+                device.OutputMessage.Events[i] = 0;
+        }
+
+        internal void SetDetectionMode(DetectionMode detectionMode, DeviceDescriptor deviceDescriptor, Action<ProviderDescriptor, DeviceDescriptor, BindingReport, short> callback)
+        {
+            var device = LookupDeviceInfo(deviceDescriptor.DeviceHandle);
+            // Check if device exists
+            if (device == null) return;
+
+            if (detectionMode == DetectionMode.Bind)
+            {
+                // Switch to bind mode
+                BindModeCallback = callback;
+                device._detectionMode = detectionMode;
+                SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.BindStart, 1);
+            }
+            if(detectionMode == DetectionMode.Subscription)
+            {
+                // Switch to subscription mode
+                device._detectionMode = detectionMode;
+                SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.BindStop, 1);
+            }
         }
 
         public static DeviceInfo LookupDeviceInfo(string name)
@@ -162,32 +239,47 @@ namespace Core_ESP8266
                 if (device.Value.DeviceReportInput == null || device.Value.DeviceReportOutput == null)
                 {
                     // Request descriptor report if it is missing
-                    SendBaseMessage(device.Value.ServiceAgent, MessageBase.MessageType.DescriptorRequest);
-                }
-                // Check if we should attempt to resubscribe to a device (if no data was received in 10 seconds)
-                if (device.Value.InputSubscription != null && DateTime.Now.AddSeconds(-10) >= device.Value.ServiceAgent.LastInputReceived)
-                {
-                    SendBaseMessage(device.Value.ServiceAgent, MessageBase.MessageType.Subscribe);
+                    SendBaseMessage(device.Value.ServiceAgent, MessageBase.MessageType.DescriptorRequest, 1);
                 }
             }
         }
 
-        private void SendBaseMessage(ServiceAgent sa, MessageBase.MessageType messageType) {
+        private bool SendBaseMessage(ServiceAgent sa, MessageBase.MessageType messageType, int serviceLevel) {
             Debug.WriteLine($"IOWrapper| ESP8266| SendBaseMessage({sa.FullName}, {messageType})");
             var message = new MessageBase();
-            message.Type = messageType;
-            SendUdpPacket(sa, message);
+            message.MsgType = messageType;
+            return SendUdpPacket(sa, message, serviceLevel);
         }
 
-        private void SendUdpPacket(ServiceAgent serviceAgent, object messageBase)
+        private bool SendUdpPacket(ServiceAgent serviceAgent, object messageBase, int serviceLevel)
         {
             Debug.WriteLine("IOWrapper| ESP8266| SendUDPPacket()");
-            Debug.WriteLine($"IOWrapper| ESP8266| Sent UDP to {serviceAgent.FullName}: {messageBase}");
             var message = MessagePackSerializer.Serialize(messageBase);
+            // Don't allow retransmission if we sent a packet in the last 20 miliseconds, as this will screw the ESP's receive buffer
+            if (serviceAgent.LastSent > DateTime.Now.AddMilliseconds(-20))
+            {
+                if (serviceLevel == 0)
+                {
+                    Debug.WriteLine($"IOWrapper| ESP8266| Transmit skipped due to antiflooding ({serviceAgent.FullName})");
+                    return false;
+                }
+                else
+                {
+                    SendQueue.Enqueue(item: new QueuedUDPPacket(serviceAgent, message));
+                }
+            }
+            // If we are going to send a non-important packet - check if we have an important to send instead
+            if (serviceLevel == 0 && SendQueue.Count > 0 )
+            {
+                SendQueue.TryDequeue(out QueuedUDPPacket result);
+                serviceAgent = result.ServiceAgent;
+                message = result.Message;
+            }
             IPEndPoint ipEndpoint = new IPEndPoint(serviceAgent.Ip, serviceAgent.Port);
             udpClient.Send(message, message.Length, ipEndpoint);
-            Debug.WriteLine($"IOWrapper| ESP8266| Sent UDP to {serviceAgent.FullName}: {MessagePackSerializer.ConvertToJson(message)}");
             serviceAgent.LastSent = DateTime.Now;
+            Debug.WriteLine($"IOWrapper| ESP8266| Sent UDP to {serviceAgent.FullName}: {messageBase}");
+            return true;
         }
 
         internal bool SubscribeInput(InputSubscriptionRequest subReq)
@@ -195,18 +287,21 @@ namespace Core_ESP8266
             var device = LookupDeviceInfo(subReq.DeviceDescriptor.DeviceHandle);
             if (device.DeviceReportInput == null)
                 return false;
-            device.InputSubscription = subReq;
-            SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.Subscribe);
+            device.InputSubscriptionHandler.Subscribe(subReq);
 
-            var timer = new Timer()
-            {
-                AutoReset = true,
-                Enabled = true,
-                Interval = 10000
-            };
-            timer.Elapsed += (sender, e) => onOutputTimer(sender, e, subReq.DeviceDescriptor.DeviceHandle);
-            timer.Start();
-            inputTimers.Add(subReq.DeviceDescriptor.DeviceHandle, timer);
+            // Make sure the keepalive timer for this device is running
+            if (!inputTimers.ContainsKey(subReq.DeviceDescriptor.DeviceHandle)) {
+                SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.Subscribe, 1);
+                var timer = new Timer()
+                {
+                    AutoReset = true,
+                    Enabled = true,
+                    Interval = 1000
+                };
+                timer.Elapsed += (sender, e) => OnInputTimer(sender, e, subReq.DeviceDescriptor.DeviceHandle);
+                timer.Start();
+                inputTimers.Add(subReq.DeviceDescriptor.DeviceHandle, timer);
+            }
             return true;
         }
 
@@ -215,26 +310,23 @@ namespace Core_ESP8266
             
             var deviceHandle = subReq.DeviceDescriptor.DeviceHandle;
             var device = LookupDeviceInfo(subReq.DeviceDescriptor.DeviceHandle);
-            device.InputSubscription = subReq;
-            SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.Unsubscribe);
-
-            // Check if we have any timers to clear
-            if (inputTimers.ContainsKey(deviceHandle))
-            {
-                // Clear timer and remove from list
-                inputTimers[deviceHandle].Stop();
-                inputTimers.Remove(deviceHandle);
-            }
+            device.InputSubscriptionHandler.Unsubscribe(subReq);
             return true;
         }
 
-        private void onInputTimer(object source, ElapsedEventArgs e, String deviceHandle)
+        private void OnInputTimer(object source, ElapsedEventArgs e, String deviceHandle)
         {
             var device = LookupDeviceInfo(deviceHandle);
             if (device == null) return; // Device must have been removed
-            if (device.ServiceAgent.LastInputReceived < DateTime.Now.AddSeconds(-10)) {
+            if (device.ServiceAgent.LastSent < DateTime.Now.AddSeconds(-2))
+            {
+                SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.HeartbeatResponse, 0);
+            }
+            if (device.ServiceAgent.LastInputReceived < DateTime.Now.AddSeconds(-10))
+            {
                 // If it's been a while since the last input was received, attempt to subscribe again
-
+                Debug.WriteLine($"IOWrapper| ESP8266| Did not receive input messages from {deviceHandle} for a while. Attempting to resubscribe.");
+                SendBaseMessage(device.ServiceAgent, MessageBase.MessageType.Subscribe, 1);
             }
         }
 
@@ -249,6 +341,7 @@ namespace Core_ESP8266
             catch (System.ObjectDisposedException)
             {
                 // Handles an exception that's thrown when this class is disposed
+                Debug.WriteLine($"IOWrapper| ESP8266| ReceiveCallback() caught ObjectDisposedException");
                 return;
             }
             // Start async receive again
@@ -265,7 +358,7 @@ namespace Core_ESP8266
                 return;
             }
             device.ServiceAgent.LastReceived = DateTime.Now;
-            switch (msg.Type)
+            switch (msg.MsgType)
             {
                 case MessageBase.MessageType.HeartbeatResponse:
                     Debug.WriteLine("IOWrapper| ESP8266| Heartbeat response");
@@ -278,19 +371,72 @@ namespace Core_ESP8266
                     InputMessage inputMessage = MessagePackSerializer.Deserialize<InputMessage>(receiveBytes);
                     HandleReceivedDeviceInputData(device, inputMessage);
                     break;
-                default:
-                    Debug.WriteLine($"IOWrapper| ESP8266| Unknown message type: {msg.Type}");
+                case MessageBase.MessageType.BindResponse:
+                    BindResponseMessage bindResponseMessage = MessagePackSerializer.Deserialize<BindResponseMessage>(receiveBytes);
+                    HandleBindResponseMessageReceived(device, bindResponseMessage);
                     break;
+                default:
+                    Debug.WriteLine($"IOWrapper| ESP8266| Unknown message type: {msg.MsgType}");
+                    break;
+            }
+        }
+
+        private static void HandleBindResponseMessageReceived(DeviceInfo device, BindResponseMessage bindResponseMessage)
+        {
+            Debug.WriteLine($"IOWrapper| ESP8266| HandleBindResponseMessageReceived()");
+            if (device._detectionMode == DetectionMode.Bind)
+            {
+                Debug.WriteLine($"IOWrapper| ESP8266| -> Device is in bind mode");
+                var bindingType = BindingCategory.Momentary;
+                var inputList = device.DescriptorMessage.Input.Buttons;
+                switch (bindResponseMessage.Category)
+                {
+                    default:
+                    case "b":
+                        // Use default initialization above
+                        break;
+                    case "a":
+                        bindingType = BindingCategory.Signed;
+                        inputList = device.DescriptorMessage.Input.Axes;
+                        break;
+                    case "e":
+                        bindingType = BindingCategory.Event;
+                        inputList = device.DescriptorMessage.Input.Events;
+                        break;
+                    case "d":
+                        bindingType = BindingCategory.Delta;
+                        inputList = device.DescriptorMessage.Input.Deltas;
+                        break;
+                }
+                
+                var bindingDesctiptor = EspUtility.GetBindingDescriptor(bindingType, bindResponseMessage.Index);
+                DeviceDescriptor deviceDescriptor = new DeviceDescriptor()
+                {
+                    DeviceHandle = device.ServiceAgent.Hostname,
+                    DeviceInstance = 0 // Unused
+                };
+                BindingReport bindingReport = new BindingReport()
+                {
+                    Title = device.ServiceAgent.Hostname,
+                    Category = bindingType,
+                    Path = $"{bindingType} > {inputList[bindResponseMessage.Index].Name}",
+                    Blockable = false,
+                    BindingDescriptor = bindingDesctiptor
+                };
+                Debug.WriteLine($"IOWrapper| ESP8266| -> Invoking callback");
+                BindModeCallback?.Invoke(_providerDescriptor, deviceDescriptor, bindingReport, bindResponseMessage.Value);
             }
         }
 
         public List<DeviceReport> getInputDeviceReports()
         {
+            Debug.WriteLine($"IOWrapper| ESP8266| getInputDeviceReports()");
             return DiscoveredAgents.Select(d => d.Value.DeviceReportInput).ToList();
         }
 
         public List<DeviceReport> getOutputDeviceReports()
         {
+            Debug.WriteLine($"IOWrapper| ESP8266| getOutputDeviceReports()");
             return DiscoveredAgents.Select(d => d.Value.DeviceReportOutput).ToList();
         }
 
@@ -336,17 +482,54 @@ namespace Core_ESP8266
                 device.OutputMessage = new OutputMessage();
                 device.OutputMessage.configureMessage(descriptorMessage);
             }
+
+            device.DescriptorMessage = descriptorMessage;
+        }
+
+        private static void processInputType(DeviceInfo device, List<short> inputs, BindingCategory type, List<IODescriptor> descriptorInput)
+        {
+            for (int key = 0; key < inputs.Count; key++)
+            {
+                //var bindingDesctiptor = new BindingDescriptor() { Type = BindingType.Button, Index = key, SubIndex = 0 };
+                var bindingDesctiptor = EspUtility.GetBindingDescriptor(type, key);
+                if (device._detectionMode == DetectionMode.Subscription)
+                {
+                    device.InputSubscriptionHandler.FireCallbacks(bindingDesctiptor, inputs[key]);
+                }
+                if (device._detectionMode == DetectionMode.Bind)
+                {
+                    DeviceDescriptor deviceDescriptor = new DeviceDescriptor()
+                    {
+                        DeviceHandle = device.ServiceAgent.Hostname,
+                        DeviceInstance = 0 // Unused
+                    };
+                    BindingReport bindingReport = new BindingReport()
+                    {
+                        Title = device.ServiceAgent.Hostname,
+                        Category = type,
+                        Path = $"{type} > {descriptorInput[key].Name}",
+                        Blockable = false,
+                        BindingDescriptor = bindingDesctiptor
+                    };
+
+                    BindModeCallback?.Invoke(_providerDescriptor, deviceDescriptor, bindingReport, inputs[key]);
+                }
+            }
         }
 
         private static void HandleReceivedDeviceInputData(DeviceInfo device, InputMessage inputMessage) {
             // TODO: Handle inputs
             Debug.WriteLine($"IOWrapper| ESP8266| ReceivedInput: {inputMessage.Buttons.Count} buttons");
-            if (device.InputSubscription == null)
-                return;
+
+            processInputType(device, inputMessage.Buttons, BindingCategory.Momentary, device.DescriptorMessage.Input.Buttons);
+            processInputType(device, inputMessage.Axes, BindingCategory.Signed, device.DescriptorMessage.Input.Axes);
+            processInputType(device, inputMessage.Deltas, BindingCategory.Delta, device.DescriptorMessage.Input.Deltas);
+            processInputType(device, inputMessage.Events, BindingCategory.Event, device.DescriptorMessage.Input.Events);
+
             device.ServiceAgent.LastInputReceived = DateTime.Now;
         }
 
-        private static DeviceReportNode BuildDeviceReportNodes(string name, BindingCategory bindingCategory, List<IODescriptor> descriptors)
+        private static DeviceReportNode BuildDeviceReportNodes(string category, BindingCategory bindingCategory, List<IODescriptor> descriptors)
         {
             var bindings = new List<BindingReport>();
             foreach (var ioDescriptor in descriptors)
@@ -355,7 +538,7 @@ namespace Core_ESP8266
                 {
                     Title = ioDescriptor.Name,
                     Category = bindingCategory,
-                    Path = $"{name} > {ioDescriptor.Name}",
+                    Path = $"{category} > {ioDescriptor.Name}",
                     Blockable = false,
                     BindingDescriptor = EspUtility.GetBindingDescriptor(bindingCategory, ioDescriptor.Value)
                 });
@@ -363,7 +546,7 @@ namespace Core_ESP8266
 
             return new DeviceReportNode()
             {
-                Title = name,
+                Title = category,
                 Bindings = bindings
             };
         }

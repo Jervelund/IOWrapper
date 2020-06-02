@@ -23,12 +23,12 @@ namespace TestApp
 
             while (true) {
                 IOW.Instance.RefreshDevices();
+                ProviderStatus.LogProviderStatuses();
+                Thread.Sleep(1000);
                 var inputList = IOW.Instance.GetInputList();
                 var outputList = IOW.Instance.GetOutputList();
                 if (inputList.Count > 0)
                     break;
-                ProviderStatus.LogProviderStatuses();
-                Thread.Sleep(10000);
             }
 
             var subReqOutput = new OutputSubscriptionRequest
@@ -40,12 +40,6 @@ namespace TestApp
             Console.WriteLine("Press Enter to subscribe output");
             Console.ReadLine();
             IOW.Instance.SubscribeOutput(subReqOutput);
-            Console.WriteLine("Press Enter to set state");
-            Console.ReadLine();
-            IOW.Instance.SetOutputstate(subReqOutput, Library.Bindings.Generic.Button1, 10);
-            Console.WriteLine("Press Enter to unsubscribe output");
-            Console.ReadLine();
-            IOW.Instance.UnsubscribeOutput(subReqOutput);
             Console.WriteLine("Press Enter to subscribe input");
             Console.ReadLine();
             var subReqInput = new InputSubscriptionRequest
@@ -56,6 +50,21 @@ namespace TestApp
                 SubscriptionDescriptor = new SubscriptionDescriptor(),
             };
             IOW.Instance.SubscribeInput(subReqInput);
+            Console.WriteLine("Press Enter to unsubscribe input");
+            Console.ReadLine();
+            IOW.Instance.UnsubscribeInput(subReqInput);
+            Console.WriteLine("Press Enter to set state");
+            Console.ReadLine();
+            IOW.Instance.SetOutputstate(subReqOutput, Library.Bindings.Generic.Button1, 10);
+            Console.WriteLine("Press Enter to unsubscribe output");
+            Console.ReadLine();
+            IOW.Instance.UnsubscribeOutput(subReqOutput);
+            Console.WriteLine("Press Enter to start bind");
+            Console.ReadLine();
+            IOW.Instance.SetDetectionMode(DetectionMode.Bind, Library.Providers.ESP8266, Library.Devices.ESP8266.Traxxas, BindModeHandler);
+            Console.WriteLine("Press Enter to stop bind");
+            Console.ReadLine();
+            IOW.Instance.SetDetectionMode(DetectionMode.Subscription, Library.Providers.ESP8266, Library.Devices.ESP8266.Traxxas);
             //IOW.Instance.Dispose();
 
             //var bindModeTester = new BindModeTester();

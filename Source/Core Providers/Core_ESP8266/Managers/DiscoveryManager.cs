@@ -101,7 +101,7 @@ namespace Core_ESP8266.Managers
         {
             requestDescriptor = _udpManager.RequestDescriptor(serviceAgent);
 
-            if (requestDescriptor == null || !MessageBase.MessageType.DescriptorResponse.Equals(requestDescriptor.Type))
+            if (requestDescriptor == null || !MessageBase.MessageType.DescriptorResponse.Equals(requestDescriptor.MsgType))
             {
                 inputDeviceReport = null;
                 outputDeviceReport = null;

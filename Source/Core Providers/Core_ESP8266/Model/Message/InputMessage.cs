@@ -7,15 +7,15 @@ namespace Core_ESP8266.Model.Message
     public class InputMessage : MessageBase
     {
         [Key("b")]
-        public List<int> Buttons { get; set; }
+        public List<short> Buttons { get; set; }
 
         [Key("a")]
-        public List<int> Axes { get; set; }
+        public List<short> Axes { get; set; }
 
         [Key("d")]
-        public List<int> Deltas { get; set; }
+        public List<short> Deltas { get; set; }
 
         [Key("e")]
-        public List<int> Events { get; set; }
+        public List<short> Events { get; set; }
     }
 }

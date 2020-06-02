@@ -74,9 +74,11 @@
     <Compile Include="EspUtility.cs" />
     <Compile Include="Managers\DescriptorManager.cs" />
     <Compile Include="Managers\DiscoveryManager.cs" />
+    <Compile Include="Managers\QueuedUDPPacket.cs" />
     <Compile Include="Managers\UdpManager.cs" />
     <Compile Include="Managers\NetworkManager.cs" />
     <Compile Include="Model\DeviceInfo.cs" />
+    <Compile Include="Model\Message\BindResponseMessage.cs" />
     <Compile Include="Model\Message\InputMessage.cs" />
     <Compile Include="Model\Message\ReportDescriptor.cs" />
     <Compile Include="Model\Message\UnsubscribeMessage.cs" />
@@ -95,6 +97,10 @@
     <ProjectReference Include="..\..\DataObjects\DTOs.csproj">
       <Project>{81851977-0421-4EBD-B066-0FE03F02589E}</Project>
       <Name>DTOs</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Provider Libraries\Subscription Handling\SubscriptionHandler\SubscriptionHandler.csproj">
+      <Project>{C9639380-2F3D-4BA2-907C-9EAC1C583EF9}</Project>
+      <Name>SubscriptionHandler</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\ProviderInterface\ProviderInterface.csproj">
       <Project>{F6EAF2BC-F362-4ECD-94E5-617CA37A4210}</Project>

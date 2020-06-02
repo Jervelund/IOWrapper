@@ -10,19 +10,23 @@ using HidWizards.IOWrapper.ProviderInterface.Interfaces;
 namespace Core_ESP8266
 {
     [Export(typeof(IProvider))]
-    public class CoreEsp8266 : IOutputProvider, IInputProvider
+    public class CoreEsp8266 : IOutputProvider, IInputProvider, IBindModeProvider
     {
-        public string ProviderName => "Core_ESP8266";
+
+        private readonly ProviderDescriptor _providerDescriptor;
         public bool IsLive { get; } = false;
 
         private NetworkManager NetworkManager { get; set; }
 
+        public string ProviderName => "Core_ESP8266";
+
         public CoreEsp8266()
         {
             Debug.WriteLine("IOWrapper| ESP8266| ESP8266()");
+            _providerDescriptor = new ProviderDescriptor() { ProviderName = ProviderName };
             try
             {
-                NetworkManager = new NetworkManager();
+                NetworkManager = new NetworkManager(_providerDescriptor);
                 IsLive = true;
             }
             catch (System.TypeInitializationException e) {
@@ -52,10 +56,7 @@ namespace Core_ESP8266
                 Title = "Core ESP8266",
                 API = ProviderName,
                 Description = "Send output to external ESP8266 modules",
-                ProviderDescriptor = new ProviderDescriptor()
-                {
-                    ProviderName = ProviderName
-                }
+                ProviderDescriptor = _providerDescriptor
             };
             if (IsLive)
                 providerReport.Devices = NetworkManager.getOutputDeviceReports();
@@ -114,10 +115,7 @@ namespace Core_ESP8266
                 Title = "Core ESP8266",
                 API = ProviderName,
                 Description = "Receive input from external ESP8266 modules",
-                ProviderDescriptor = new ProviderDescriptor()
-                {
-                    ProviderName = ProviderName
-                }
+                ProviderDescriptor = _providerDescriptor
             };
             if (IsLive)
                 providerReport.Devices = NetworkManager.getInputDeviceReports();
@@ -145,6 +143,13 @@ namespace Core_ESP8266
             Debug.WriteLine("IOWrapper| ESP8266| UnsubscribeInput()");
             return NetworkManager.UnsubscribeInput(subReq);
             // throw new NotImplementedException();
+        }
+
+        public void SetDetectionMode(DetectionMode detectionMode, DeviceDescriptor deviceDescriptor, Action<ProviderDescriptor, DeviceDescriptor, BindingReport, short> callback = null)
+        {
+            if (IsLive == false) return;
+            Debug.WriteLine("IOWrapper| ESP8266| SetDetectionMode()");
+            NetworkManager.SetDetectionMode(detectionMode, deviceDescriptor, callback);
         }
     }
 }

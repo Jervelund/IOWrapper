@@ -8,7 +8,7 @@ namespace Core_ESP8266.Model.Message
     {
         public DescriptorMessage()
         {
-            Type = MessageType.DescriptorResponse;
+            MsgType = MessageType.DescriptorResponse;
         }
 
         [Key("i")]
